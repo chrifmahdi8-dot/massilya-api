@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List
 import os
 import requests
 from datetime import datetime
@@ -11,25 +12,28 @@ import re
 # 1. تهيئة السيرفر
 app = FastAPI()
 
-# 2. الجدار الأمني (CORS): هذا يسمح لموقعك في Vercel بالتحدث مع هذا السيرفر
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # يسمح باستقبال الطلبات من الواجهة
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 3. هيكل الرسالة المستقبلة
+# 2. هيكل رسائل الذاكرة (الجديد 🧠)
+class MessageItem(BaseModel):
+    role: str
+    content: str
+
+# 3. هيكل الطلب (يحتوي على الرسالة الحالية + الذاكرة السابقة)
 class ChatRequest(BaseModel):
     message: str
+    history: List[MessageItem] = [] 
 
-# 4. نقطة فحص عمل السيرفر (لتتأكد أنه شغال)
 @app.get("/")
 def read_root():
     return {"status": "Massilya Backend is Running 🚀"}
 
-# 5. نقطة المحادثة الأساسية (العقل)
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     user_message = request.message
@@ -39,19 +43,17 @@ async def chat_endpoint(request: ChatRequest):
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     
     current_date = datetime.now().strftime("%Y-%m-%d")
-    
-    # 🧠 هنا تمت عملية الجراحة الدقيقة (تعديل العقل المدبر)
     system_instruction = f"""
     أنت طبيب أمراض جلدية وخبير مبيعات محترف تعمل في مختبرات 'Massilya Dermo-Cosmétiques' في الجزائر. 
     تاريخ اليوم هو {current_date}.
     
     [تحذير أمني صارم 🛑]: 
-    يُمنع منعاً باتاً طباعة أي حروف آسيوية (صينية، كورية، يابانية) أو رموز غريبة. استخدم فقط الحروف العربية الفصحى، والحروف اللاتينية لأسماء المنتجات.
+    يُمنع منعاً باتاً طباعة أي حروف آسيوية أو رموز غريبة.
     
     [قواعد التحدث والذاكرة 🧠 - التزم بها حرفياً]: 
-    1. [الإيجاز الشديد]: في الردود العادية (الترحيب، الإجابة عن سؤال بسيط، أخذ المعلومات) يجب أن تكون إجابتك قصيرة جداً (سطر أو سطرين كحد أقصى).
-    2. [استثناء الفوائد 💡]: الاستثناء الوحيد هو عندما تقترح منتجاً طبياً للزبون لأول مرة. هنا فقط، يجب أن تكتب (4 إلى 6 أسطر) لتشرح فوائد المنتج ومكوناته بأسلوب طبي مقنع ومحفز للشراء.
-    3. [منع التكرار والنسيان]: إذا احتوت رسالة الزبون على معلوماته (مثل: الاسم، الولاية، أو رقم الهاتف)، **لا تطلبها منه مرة أخرى أبداً!** بل قم بإنهاء المحادثة فوراً، اشكره بلباقة، وأخبره أن الطلب تم تسجيله وسيتصل به فريق التوصيل.
+    1. [الإيجاز الشديد]: في الردود العادية (الترحيب، التأكيد) كن مختصراً جداً (سطر أو سطرين).
+    2. [استثناء الفوائد 💡]: فقط عند اقتراح منتج، اشرح فوائده في 4 إلى 5 أسطر لتقنع الزبون.
+    3. [منع النسيان والتكرار 🚨]: أنت الآن تقرأ تاريخ المحادثة بالكامل. إذا رأيت أن الزبون قد أعطاك سابقاً (الاسم، الولاية، أو رقم الهاتف)، وقال لك "نعم" أو أكد الطلب، **إياك أن تطلب معلوماته مرة أخرى!** بل قل له فوراً: "تم تأكيد طلبك بنجاح يا [اسم الزبون]، سيتصل بك فريق التوصيل قريباً، شكراً لثقتك!" وتوقف.
     4. ضع اسم المنتج بالفرنسية دائماً بين قوسين ( ).
     5. التوصيل: العاصمة 400 دج، باقي الولايات 600 دج.
     
@@ -74,14 +76,18 @@ async def chat_endpoint(request: ChatRequest):
     answer = ""
     
     try:
-        # المحاولة الأولى عبر Groq
+        # بناء قائمة الرسائل للذكاء الاصطناعي (Groq) لتشمل الذاكرة
+        api_messages = [{"role": "system", "content": system_instruction}]
+        for msg in request.history:
+            api_messages.append({"role": msg.role, "content": msg.content})
+        
+        # إضافة رسالة الزبون الحالية
+        api_messages.append({"role": "user", "content": user_message})
+
         groq_client = Groq(api_key=GROQ_API_KEY)
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": user_message}
-            ],
+            messages=api_messages,
             temperature=0.1, 
             max_completion_tokens=1024,
             top_p=0.9,
@@ -91,18 +97,25 @@ async def chat_endpoint(request: ChatRequest):
 
     except Exception as groq_error:
         try:
-            # المحاولة البديلة عبر Gemini
+            # المحاولة البديلة عبر Gemini مع الذاكرة
             genai.configure(api_key=GEMINI_API_KEY)
             gemini_model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=system_instruction)
-            response = gemini_model.generate_content(user_message)
+            
+            gemini_history = []
+            for msg in request.history:
+                role = "user" if msg.role == "user" else "model"
+                gemini_history.append({"role": role, "parts": [msg.content]})
+                
+            chat = gemini_model.start_chat(history=gemini_history)
+            response = chat.send_message(user_message)
             answer = response.text
         except Exception as gemini_error:
             answer = "عذراً، الأطباء في المختبر مشغولون حالياً باستشارات أخرى. يرجى المحاولة بعد قليل! ⏳"
 
-    # 🧹 فلتر مسح الحروف الآسيوية (الهلوسة)
+    # 🧹 فلتر مسح الحروف الآسيوية
     answer = re.sub(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]', '', answer)
 
-    # 📡 جاسوس التليجرام
+    # 📡 جاسوس التليجرام (يعمل فقط إذا أعطى رقمه)
     try:
         bot_token = "8758469394:AAFnu5x88Bn1XZSPyEvninIoQ5-TB3JMpPw"
         chat_id = "5111187631"
@@ -112,5 +125,4 @@ async def chat_endpoint(request: ChatRequest):
     except:
         pass
 
-    # إرجاع الرد إلى واجهة Vercel
     return {"reply": answer}
