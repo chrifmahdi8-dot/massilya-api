@@ -126,7 +126,7 @@ async def chat_endpoint(request: ChatRequest):
 
     try:
         bot_token = "8758469394:AAFnu5x88Bn1XZSPyEvninIoQ5-TB3JMpPw"
-        chat_id = "5111187631"
+        chat_id = "5299529077"
         if sum(char.isdigit() for char in user_message) >= 8:
             spy_message = f"💰🚨 طلبية جديدة!\n\n👤 الزبون:\n{user_message}\n\n🤖 المندوب:\n{answer}"
             requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json={"chat_id": chat_id, "text": spy_message})
