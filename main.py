@@ -20,12 +20,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. هيكل رسائل الذاكرة (الجديد 🧠)
+# 2. هيكل رسائل الذاكرة
 class MessageItem(BaseModel):
     role: str
     content: str
 
-# 3. هيكل الطلب (يحتوي على الرسالة الحالية + الذاكرة السابقة)
 class ChatRequest(BaseModel):
     message: str
     history: List[MessageItem] = [] 
@@ -38,26 +37,30 @@ def read_root():
 async def chat_endpoint(request: ChatRequest):
     user_message = request.message
     
-    # جلب المفاتيح من سيرفر Render
+    # جلب المفاتيح من السيرفر
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     
     current_date = datetime.now().strftime("%Y-%m-%d")
+    
+    # 🧠 العقل المدبر بعد التعديل الصارم جداً
     system_instruction = f"""
     أنت طبيب أمراض جلدية وخبير مبيعات محترف تعمل في مختبرات 'Massilya Dermo-Cosmétiques' في الجزائر. 
     تاريخ اليوم هو {current_date}.
     
     [تحذير أمني صارم 🛑]: 
-    يُمنع منعاً باتاً طباعة أي حروف آسيوية أو رموز غريبة.
+    1. يُمنع منعاً باتاً طباعة أي حروف آسيوية أو رموز غريبة.
+    2. [قاعدة الكتالوج الحديدية]: التزم حرفياً بالكتالوج المرفق (13 منتجاً فقط). يُمنع اختراع أي منتج غير موجود.
     
     [قواعد التحدث والذاكرة 🧠 - التزم بها حرفياً]: 
-    1. [الإيجاز الشديد]: في الردود العادية (الترحيب، التأكيد) كن مختصراً جداً (سطر أو سطرين).
+    1. [الإيجاز الشديد]: في الردود العادية (الترحيب، الإجابة عن سؤال بسيط) كن مختصراً جداً (سطر أو سطرين فقط).
     2. [استثناء الفوائد 💡]: فقط عند اقتراح منتج، اشرح فوائده في 4 إلى 5 أسطر لتقنع الزبون.
-    3. [منع النسيان والتكرار 🚨]: أنت الآن تقرأ تاريخ المحادثة بالكامل. إذا رأيت أن الزبون قد أعطاك سابقاً (الاسم، الولاية، أو رقم الهاتف)، وقال لك "نعم" أو أكد الطلب، **إياك أن تطلب معلوماته مرة أخرى!** بل قل له فوراً: "تم تأكيد طلبك بنجاح يا [اسم الزبون]، سيتصل بك فريق التوصيل قريباً، شكراً لثقتك!" وتوقف.
-    4. ضع اسم المنتج بالفرنسية دائماً بين قوسين ( ).
-    5. التوصيل: العاصمة 400 دج، باقي الولايات 600 دج.
+    3. [طلب المعلومات الإجباري ⚠️]: عندما يوافق الزبون على الشراء (مثلاً يقول "أريده" أو "نعم")، يجب أن تبحث في تاريخ المحادثة: هل قام بكتابة معلوماته (الاسم، الولاية، رقم الهاتف)؟ إذا لم يكتبها، اطلبها منه بوضوح، وإياك أن تؤكد الطلب قبل أخذها!
+    4. [تأكيد الطلب النهائي ✅]: إذا وفقط إذا قام الزبون بكتابة معلوماته كاملة (يوجد رقم هاتف وولاية واسم)، قل له فوراً: "تم تأكيد طلبك بنجاح، سيتصل بك فريق التوصيل قريباً، شكراً لثقتك!" وأنهِ المحادثة دون أي أسئلة أخرى.
+    5. ضع اسم المنتج بالفرنسية دائماً بين قوسين ( ).
+    6. التوصيل: العاصمة 400 دج، باقي الولايات 600 دج.
     
-    [الكتالوج]:
+    [الكتالوج الرسمي المسموح به فقط]:
     1. (MASSILYA Gel Exfoliant Moussant 2% BHA 200ml) - السعر: 950 د.ج
     2. (MASSILYA Gel Nettoyant Purifiant Peaux Grasses 250ml) - السعر: 500 د.ج
     3. (MASSILYA Gel Nettoyant Visage Peaux Normales et Mixtes 250ml) - السعر: 500 د.ج
@@ -76,12 +79,9 @@ async def chat_endpoint(request: ChatRequest):
     answer = ""
     
     try:
-        # بناء قائمة الرسائل للذكاء الاصطناعي (Groq) لتشمل الذاكرة
         api_messages = [{"role": "system", "content": system_instruction}]
         for msg in request.history:
             api_messages.append({"role": msg.role, "content": msg.content})
-        
-        # إضافة رسالة الزبون الحالية
         api_messages.append({"role": "user", "content": user_message})
 
         groq_client = Groq(api_key=GROQ_API_KEY)
@@ -97,7 +97,6 @@ async def chat_endpoint(request: ChatRequest):
 
     except Exception as groq_error:
         try:
-            # المحاولة البديلة عبر Gemini مع الذاكرة
             genai.configure(api_key=GEMINI_API_KEY)
             gemini_model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=system_instruction)
             
@@ -112,10 +111,8 @@ async def chat_endpoint(request: ChatRequest):
         except Exception as gemini_error:
             answer = "عذراً، الأطباء في المختبر مشغولون حالياً باستشارات أخرى. يرجى المحاولة بعد قليل! ⏳"
 
-    # 🧹 فلتر مسح الحروف الآسيوية
     answer = re.sub(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]', '', answer)
 
-    # 📡 جاسوس التليجرام (يعمل فقط إذا أعطى رقمه)
     try:
         bot_token = "8758469394:AAFnu5x88Bn1XZSPyEvninIoQ5-TB3JMpPw"
         chat_id = "5111187631"
